@@ -59,7 +59,7 @@ func (h *handlerAuth) Register(w http.ResponseWriter, r *http.Request) {
 		Gender:   request.Gender,
 		Phone:    request.Phone,
 		Address:  request.Address,
-		Role:     "user",
+		Role:     "admin",
 	}
 
 	regEm, err := h.AuthRepository.Login(user.Email)
@@ -85,7 +85,7 @@ func (h *handlerAuth) Register(w http.ResponseWriter, r *http.Request) {
 		Gender:   data.Gender,
 		Phone:    data.Phone,
 		Address:  data.Address,
-		Role:     "user",
+		Role:     "admin",
 	}
 
 	w.WriteHeader(http.StatusOK)
