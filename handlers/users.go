@@ -74,13 +74,13 @@ func (h *handlerUser) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := models.User{
-		FullName:     request.FullName,
+		FullName: request.FullName,
 		Email:    request.Email,
 		Password: request.Password,
-		Gender: request.Gender,
-		Phone: request.Phone,
-		Address: request.Address,
-		Role: "user",
+		Gender:   request.Gender,
+		Phone:    request.Phone,
+		Address:  request.Address,
+		Role:     "user",
 	}
 
 	data, err := h.UserRepository.CreateUser(user)
@@ -142,7 +142,6 @@ func (h *handlerUser) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.Role = "user"
 	}
 
-
 	data, err := h.UserRepository.UpdateUser(user)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -183,10 +182,10 @@ func (h *handlerUser) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func convertResponse(u models.User) usersdto.UserResponse {
 	return usersdto.UserResponse{
-		ID: u.ID,
+		ID:       u.ID,
 		FullName: u.FullName,
 		Email:    u.Email,
 		Password: u.Password,
-		Role: u.Role,
+		Role:     u.Role,
 	}
 }

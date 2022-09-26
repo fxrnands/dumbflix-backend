@@ -28,8 +28,8 @@ import (
 
 var c = coreapi.Client{
 	ServerKey: os.Getenv("SERVER_KEY"),
-	ClientKey:  os.Getenv("CLIENT_KEY"),
-  }
+	ClientKey: os.Getenv("CLIENT_KEY"),
+}
 
 type handlerTransaction struct {
 	TransactionRepository repositories.TransactionRepository
@@ -77,36 +77,30 @@ func (h *handlerTransaction) GetTransaction(w http.ResponseWriter, r *http.Reque
 func (h *handlerTransaction) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// get data user token
 	userInfo := r.Context().Value("userInfo").(jwt.MapClaims)
 	userId := int(userInfo["id"].(float64))
 
-	
-	// convert start date & end date
 	currentTime := time.Now()
 	fmt.Println("Current Time: ", currentTime)
-	dueDate :=	time.Now().Add(time.Hour  * 24 * 30)
+	dueDate := time.Now().Add(time.Hour * 24 * 30)
 	fmt.Println("Expired in:", dueDate)
-	
+
 	user_id, _ := strconv.Atoi(r.FormValue("user_id"))
 	request := transactiondto.TransactionRequest{
 		StartDate: currentTime,
-		DueDate: dueDate,
-		UserID: user_id,
+		DueDate:   dueDate,
+		UserID:    user_id,
 	}
 
-
-	// Create Unique Transaction Id ...
 	var TransIdIsMatch = false
-var TransactionId int
-for !TransIdIsMatch {
-  TransactionId = userId + rand.Intn(1000) - rand.Intn(1000)
-  transactionData, _ := h.TransactionRepository.GetTransaction(TransactionId)
-  if transactionData.ID == 0 {
-    TransIdIsMatch = true
-  }
-}
-
+	var TransactionId int
+	for !TransIdIsMatch {
+		TransactionId = userId + rand.Intn(1000) - rand.Intn(1000)
+		transactionData, _ := h.TransactionRepository.GetTransaction(TransactionId)
+		if transactionData.ID == 0 {
+			TransIdIsMatch = true
+		}
+	}
 
 	validation := validator.New()
 	err := validation.Struct(request)
@@ -119,13 +113,12 @@ for !TransIdIsMatch {
 
 	transaction := models.Transaction{
 		StartDate: currentTime,
-		DueDate: dueDate,
-		UserID: userId,
-		Price: 30000,
-		Status: "pending",
+		DueDate:   dueDate,
+		UserID:    userId,
+		Price:     30000,
+		Status:    "pending",
 	}
 
-	// err := mysql.DB.Create(&transaction).Error
 	transaction, err = h.TransactionRepository.CreateTransaction(transaction)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -142,103 +135,88 @@ for !TransIdIsMatch {
 		return
 	}
 
-	// 1. Initiate Snap client
-var s = snap.Client{}
-s.New(os.Getenv("SERVER_KEY"), midtrans.Sandbox)
-// Use to midtrans.Production if you want Production Environment (accept real transaction).
+	var s = snap.Client{}
+	s.New(os.Getenv("SERVER_KEY"), midtrans.Sandbox)
 
-// 2. Initiate Snap request param
-req := &snap.Request{
-  TransactionDetails: midtrans.TransactionDetails{
-    OrderID:  strconv.Itoa(transaction.ID),
-    GrossAmt: int64(transaction.Price),
-  },
-  CreditCard: &snap.CreditCardDetails{
-    Secure: true,
-  },
-  CustomerDetail: &midtrans.CustomerDetails{
-    FName: transaction.User.FullName,
-    Email: transaction.User.Email,
-  },
-  }
+	req := &snap.Request{
+		TransactionDetails: midtrans.TransactionDetails{
+			OrderID:  strconv.Itoa(transaction.ID),
+			GrossAmt: int64(transaction.Price),
+		},
+		CreditCard: &snap.CreditCardDetails{
+			Secure: true,
+		},
+		CustomerDetail: &midtrans.CustomerDetails{
+			FName: transaction.User.FullName,
+			Email: transaction.User.Email,
+		},
+	}
 
-// 3. Execute request create Snap transaction to Midtrans Snap API
-snapResp, _ := s.CreateTransaction(req)
+	snapResp, _ := s.CreateTransaction(req)
 
-w.WriteHeader(http.StatusOK)
-response := dto.SuccessResult{Code: http.StatusOK, Data: snapResp}
-json.NewEncoder(w).Encode(response)
-
-	// w.WriteHeader(http.StatusOK)
-	// response := dto.SuccessResult{Code: http.StatusOK, Data: convertResponseTransaction(transaction)}
-	// json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
+	response := dto.SuccessResult{Code: http.StatusOK, Data: snapResp}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *handlerTransaction) Notification(w http.ResponseWriter, r *http.Request) {
 	var notificationPayload map[string]interface{}
-  
+
 	err := json.NewDecoder(r.Body).Decode(&notificationPayload)
 	if err != nil {
-	  w.WriteHeader(http.StatusBadRequest)
-	  response := dto.ErrorResult{Code: http.StatusBadRequest, Message: err.Error()}
-	  json.NewEncoder(w).Encode(response)
-	  return
+		w.WriteHeader(http.StatusBadRequest)
+		response := dto.ErrorResult{Code: http.StatusBadRequest, Message: err.Error()}
+		json.NewEncoder(w).Encode(response)
+		return
 	}
-  
+
 	transactionStatus := notificationPayload["transaction_status"].(string)
 	fraudStatus := notificationPayload["fraud_status"].(string)
 	orderId := notificationPayload["order_id"].(string)
 
 	transaction, _ := h.TransactionRepository.GetOneTransaction(orderId)
-  
-	if transactionStatus == "capture" {
-	  if fraudStatus == "challenge" {
-		// TODO set transaction status on your database to 'challenge'
-		// e.g: 'Payment status challenged. Please take action on your Merchant Administration Portal
-		h.TransactionRepository.UpdateTransaction("pending",  orderId)
-	  } else if fraudStatus == "accept" {
-		// TODO set transaction status on your database to 'success'
-		SendMail("success", transaction)
-		h.TransactionRepository.UpdateTransaction("success",  orderId)
-	  }
-	} else if transactionStatus == "settlement" {
-	  // TODO set transaction status on your databaase to 'success'
-	  SendMail("success", transaction)
-	  h.TransactionRepository.UpdateTransaction("success",  orderId)
-	} else if transactionStatus == "deny" {
-	  // TODO you can ignore 'deny', because most of the time it allows payment retries
-	  // and later can become success
-	  SendMail("failed", transaction)
-	  h.TransactionRepository.UpdateTransaction("failed",  orderId)
-	} else if transactionStatus == "cancel" || transactionStatus == "expire" {
-	  // TODO set transaction status on your databaase to 'failure'
-	  SendMail("failed", transaction)
-	  h.TransactionRepository.UpdateTransaction("failed",  orderId)
-	} else if transactionStatus == "pending" {
-	  // TODO set transaction status on your databaase to 'pending' / waiting payment
-	  h.TransactionRepository.UpdateTransaction("pending",  orderId)
-	}
-  
-	w.WriteHeader(http.StatusOK)
-  }
 
-  func SendMail(status string, transaction models.Transaction) {
+	if transactionStatus == "capture" {
+		if fraudStatus == "challenge" {
+
+			h.TransactionRepository.UpdateTransaction("pending", orderId)
+		} else if fraudStatus == "accept" {
+			SendMail("success", transaction)
+			h.TransactionRepository.UpdateTransaction("success", orderId)
+		}
+	} else if transactionStatus == "settlement" {
+		SendMail("success", transaction)
+		h.TransactionRepository.UpdateTransaction("success", orderId)
+	} else if transactionStatus == "deny" {
+		SendMail("failed", transaction)
+		h.TransactionRepository.UpdateTransaction("failed", orderId)
+	} else if transactionStatus == "cancel" || transactionStatus == "expire" {
+		SendMail("failed", transaction)
+		h.TransactionRepository.UpdateTransaction("failed", orderId)
+	} else if transactionStatus == "pending" {
+		h.TransactionRepository.UpdateTransaction("pending", orderId)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func SendMail(status string, transaction models.Transaction) {
 
 	if status != transaction.Status && (status == "success") {
-	  var CONFIG_SMTP_HOST = "smtp.gmail.com"
-	  var CONFIG_SMTP_PORT = 587
-	  var CONFIG_SENDER_NAME = "aditya.rizki0501@gmail.com"
-	  var CONFIG_AUTH_EMAIL = os.Getenv("EMAIL_SYSTEM")
-	  var CONFIG_AUTH_PASSWORD = os.Getenv("PASSWORD_SYSTEM")
-  
-	  var expire = transaction.DueDate
-	  var price = strconv.Itoa(transaction.Price)
-  
-	  mailer := gomail.NewMessage()
-	  mailer.SetHeader("From", CONFIG_SENDER_NAME)
-	  mailer.SetHeader("To", transaction.User.Email)
-	  mailer.SetHeader("Subject", "Transaction Status")
-	  mailer.SetBody("text/html", fmt.Sprintf(`<!DOCTYPE html>
+		var CONFIG_SMTP_HOST = "smtp.gmail.com"
+		var CONFIG_SMTP_PORT = 587
+		var CONFIG_SENDER_NAME = "aditya.rizki0501@gmail.com"
+		var CONFIG_AUTH_EMAIL = os.Getenv("EMAIL_SYSTEM")
+		var CONFIG_AUTH_PASSWORD = os.Getenv("PASSWORD_SYSTEM")
+
+		var expire = transaction.DueDate
+		var price = strconv.Itoa(transaction.Price)
+
+		mailer := gomail.NewMessage()
+		mailer.SetHeader("From", CONFIG_SENDER_NAME)
+		mailer.SetHeader("To", transaction.User.Email)
+		mailer.SetHeader("Subject", "Transaction Status")
+		mailer.SetBody("text/html", fmt.Sprintf(`<!DOCTYPE html>
 	  <html lang="en">
 		<head>
 		<meta charset="UTF-8" />
@@ -260,22 +238,22 @@ func (h *handlerTransaction) Notification(w http.ResponseWriter, r *http.Request
 		</ul>
 		</body>
 	  </html>`, expire, price, status))
-  
-	  dialer := gomail.NewDialer(
-		CONFIG_SMTP_HOST,
-		CONFIG_SMTP_PORT,
-		CONFIG_AUTH_EMAIL,
-		CONFIG_AUTH_PASSWORD,
-	  )
-  
-	  err := dialer.DialAndSend(mailer)
-	  if err != nil {
-		log.Fatal(err.Error())
-	  }
-  
-	  log.Println("Mail sent! to " + transaction.User.Email)
+
+		dialer := gomail.NewDialer(
+			CONFIG_SMTP_HOST,
+			CONFIG_SMTP_PORT,
+			CONFIG_AUTH_EMAIL,
+			CONFIG_AUTH_PASSWORD,
+		)
+
+		err := dialer.DialAndSend(mailer)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+
+		log.Println("Mail sent! to " + transaction.User.Email)
 	}
-  }
+}
 
 func (h *handlerTransaction) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -304,12 +282,11 @@ func (h *handlerTransaction) DeleteTransaction(w http.ResponseWriter, r *http.Re
 
 func convertResponseTransaction(u models.Transaction) models.TransactionResponse {
 	return models.TransactionResponse{
-		ID:     u.ID,
+		ID:        u.ID,
 		StartDate: u.StartDate,
-		DueDate: u.DueDate,
-		UserID: u.UserID,
-		User: u.User,
-		// Price: u.Price,
-		Status: u.Status,
+		DueDate:   u.DueDate,
+		UserID:    u.UserID,
+		User:      u.User,
+		Status:    u.Status,
 	}
 }

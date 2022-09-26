@@ -6,11 +6,15 @@ import (
 	"be-dumbflix/models"
 	"be-dumbflix/repositories"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
+	"context"
 	"os"
 
+	"github.com/cloudinary/cloudinary-go"
+	"github.com/cloudinary/cloudinary-go/api/uploader"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 )
@@ -19,7 +23,6 @@ type handlerFilm struct {
 	FilmRepository repositories.FilmRepository
 }
 
-// `path_file` Global variable here ...
 var PathFile = os.Getenv("PATH_FILE")
 
 func HandlerFilm(FilmRepository repositories.FilmRepository) *handlerFilm {
@@ -35,11 +38,6 @@ func (h *handlerFilm) FindFilms(w http.ResponseWriter, r *http.Request) {
 		response := dto.ErrorResult{Code: http.StatusBadRequest, Message: err.Error()}
 		json.NewEncoder(w).Encode(response)
 		return
-	}
-
-	// Create Embed Path File on Image & Video property here ...
-	for i, p := range films {
-		films[i].ThumbnailFilm = os.Getenv("PATH_FILE") + p.ThumbnailFilm
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -61,9 +59,6 @@ func (h *handlerFilm) GetFilm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create Embed Path File on Image property here ...
-	film.ThumbnailFilm = os.Getenv("PATH_FILE") + film.ThumbnailFilm
-
 	w.WriteHeader(http.StatusOK)
 	response := dto.SuccessResult{Code: http.StatusOK, Data: convertResponseFilm(film)}
 	json.NewEncoder(w).Encode(response)
@@ -72,13 +67,8 @@ func (h *handlerFilm) GetFilm(w http.ResponseWriter, r *http.Request) {
 func (h *handlerFilm) CreateFilm(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// get data user token
-	// userInfo := r.Context().Value("userInfo").(jwt.MapClaims)
-	// userId := int(userInfo["id"].(float64))
-
-	// Get dataFile from midleware and store to filename variable here ...
 	dataContex := r.Context().Value("dataFile")
-	filename := dataContex.(string)
+	filepath := dataContex.(string)
 
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	category_id, _ := strconv.Atoi(r.FormValue("category_id"))
@@ -100,9 +90,22 @@ func (h *handlerFilm) CreateFilm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var ctx = context.Background()
+	var CLOUD_NAME = os.Getenv("CLOUD_NAME")
+	var API_KEY = os.Getenv("API_KEY")
+	var API_SECRET = os.Getenv("API_SECRET")
+
+	cld, _ := cloudinary.NewFromParams(CLOUD_NAME, API_KEY, API_SECRET)
+
+	resp, err := cld.Upload.Upload(ctx, filepath, uploader.UploadParams{Folder: "dumbflix"})
+
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
 	film := models.Film{
 		Title:         request.Title,
-		ThumbnailFilm: filename,
+		ThumbnailFilm: resp.SecureURL,
 		LinkFilm:      request.LinkFilm,
 		Year:          request.Year,
 		CategoryID:    category_id,
@@ -110,7 +113,6 @@ func (h *handlerFilm) CreateFilm(w http.ResponseWriter, r *http.Request) {
 		Desc:          request.Desc,
 	}
 
-	// err := mysql.DB.Create(&film).Error
 	film, err = h.FilmRepository.CreateFilm(film)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
